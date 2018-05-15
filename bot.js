@@ -105,6 +105,7 @@ controller.hears(['greet'], 'direct_message,direct_mention,mention,message_recei
   /* search for your friend in the long list of friendz */
   var friend_content = [];
   var i;
+  var friendind = 0;
   for (i = 0; i < Object.keys(friendlist).length; ++i)
   {
     if (Object.keys(friendlist)[i] == message.user)
@@ -113,9 +114,11 @@ controller.hears(['greet'], 'direct_message,direct_mention,mention,message_recei
       /*console.log(knowledge.chatbot_brain.responses.getByIndex(i))*/
       console.log('Found the friend list entry:');
       console.log(friend_content);
+      friendind = 1;
     }
-    else
-    {
+  }
+  if (friendind == 0)
+  {
       console.log('I dont know this friend, adding to friend list');
       friendlist[message.user] = {};
       friendlist[message.user].username = 'no name';
@@ -123,9 +126,7 @@ controller.hears(['greet'], 'direct_message,direct_mention,mention,message_recei
       friendlist[message.user].datemet = today;
       console.log(friendlist);
       friend_content = friendlist[message.user];
-    }
   }
-
 
   /* loop through the brain to find the right thing to say*/
   var convo_content = [];
