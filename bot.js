@@ -24,6 +24,24 @@ if (!process.env.verify_token) {
     process.exit(1);
 }
 
+var knowledge = require("./responses.json");
+var hobbyknowledge = require("./hobbyknowledge.json");
+var fs = require('fs');
+
+var Botkit = require('botkit');
+var debug = require('debug')('botkit:main');
+
+const rasa = require('./src/middleware-rasa')({
+  rasa_uri: 'http://localhost:5000',
+  rasa_project: 'default'
+})
+
+// Toggle modes of bot behavior:
+// 1: grumpy 0: normal
+var mood = 1;
+// 1: on 0: off
+var learningmode = 1;
+
 /* get date */
 var today = new Date();
 var dd = today.getDate();
@@ -36,17 +54,6 @@ if(mm<10) {
     mm = '0'+mm
 } 
 today = mm + '/' + dd + '/' + yyyy;
-
-var knowledge = require("./responses.json");
-var fs = require('fs');
-
-var Botkit = require('botkit');
-var debug = require('debug')('botkit:main');
-
-const rasa = require('./src/middleware-rasa')({
-  rasa_uri: 'http://localhost:5000',
-  rasa_project: 'default'
-})
 
 // Create the Botkit controller, which controls all instances of the bot.
 var controller = Botkit.facebookbot({
@@ -99,13 +106,14 @@ controller.hears(['greet'], 'direct_message,direct_mention,mention,message_recei
   var friendlist = require("./friends.json");
   //console.log(friendlist)
   console.log(message);
-  console.log('Printing user name:');
-  console.log(message.user);
+  //console.log('Printing user name:');
+  //console.log(message.user);
 
   /* search for your friend in the long list of friendz */
   var friend_content = [];
   var i;
   var friendind = 0;
+  var thename = 'no name'
   for (i = 0; i < Object.keys(friendlist).length; ++i)
   {
     if (Object.keys(friendlist)[i] == message.user)
@@ -115,10 +123,10 @@ controller.hears(['greet'], 'direct_message,direct_mention,mention,message_recei
       console.log('Found the friend list entry:');
       console.log(friend_content);
       friendind = 1;
-    }
-  }
+    };
+  };
   if (friendind == 0)
-  {
+  {first_name
       console.log('I dont know this friend, adding to friend list');
       friendlist[message.user] = {};
       friendlist[message.user].username = 'no name';
@@ -126,9 +134,69 @@ controller.hears(['greet'], 'direct_message,direct_mention,mention,message_recei
       friendlist[message.user].datemet = today;
       console.log(friendlist);
       friend_content = friendlist[message.user];
-  }
+  };
+// If no name in database, find out name!
+  if (friendlist[message.user].username == 'no name')
+  {
+    bot.createConversation(message, function(err, convo) 
+    {
+      // create a path for when a user says YES
+      convo.addMessage({text: 'Okay!',action: 'completed',},'yes_thread');
 
-  /* loop through the brain to find the right thing to say*/
+      // create a path for when a user says NO
+      convo.addMessage({text: 'Oh...',action: 'default',},'no_thread');
+
+      // create a path where neither option was matched
+      // this message has an action field, which directs botkit to go back to the `default` thread after sending this message.
+      convo.addMessage({text: 'Cool!!!',action: 'confirm',},'nameresponse');
+      convo.addMessage({text: 'I dont think I understand!!!',action: 'confirm',},'bad_response');
+
+      // Create a yes/no question in the default thread...
+      convo.addQuestion('Hey, what\'s your name!?', [
+      {
+        default: true,
+        callback: function(response, convo) {
+          convo.gotoThread('nameresponse');
+          console.log(convo.extractResponses());
+          thename = convo.extractResponse('Hey, what\'s your name!?');
+        },
+      }
+      ],{},'default');
+
+      convo.addQuestion('So you want to go by this name ?', [
+      {
+        pattern: bot.utterances.yes,
+        callback: function(response, convo) {
+            convo.gotoThread('yes_thread');
+            friendlist[message.user].username = thename;
+
+            // save friend list
+            friendlist_export = JSON.stringify(friendlist);
+            fs.writeFile("./friends.json", friendlist_export, function(err)
+            {
+	      if (err) throw err;
+	      console.log('Friends Saved!');
+            });
+        },
+      },
+      {
+        pattern: bot.utterances.no,
+        callback: function(response, convo) {
+            convo.gotoThread('no_thread');
+        },
+      },
+      {
+        default: true,
+        callback: function(response, convo) {
+            convo.gotoThread('bad_response');
+        },
+      }
+      ],{},'confirm');
+
+      convo.activate();
+    });
+  };
+
   var convo_content = [];
   var i;
   var obj;
@@ -141,41 +209,70 @@ controller.hears(['greet'], 'direct_message,direct_mention,mention,message_recei
       console.log(convo_content);
     }
   }
-  /* say the thing based on your friend level*/
+  //console.log("print the entity value");  
+  //console.log(message.entities[0].value);
+
+  // say the thing based on your friend level
+  var randnum = Math.floor(Math.random() * 10);
+  console.log(randnum);
   console.log(friend_content.friendlevel);
   if (message.intent.confidence < .75)
   {
-    bot.reply(message, convo_content[0].misunderstand);
+    //bot.reply(message, convo_content[0].misunderstand);
+    bot.replyWithTyping(message, convo_content[0].misunderstand);
   }
   else if (friend_content.friendlevel < 1)
   {
-    bot.reply(message, convo_content[0].lvl1);
+    //bot.reply(message, convo_content[0].lvl1);
+    bot.replyWithTyping(message, convo_content[0].lvl1);
   }
   else if (friend_content.friendlevel >= 1 && friend_content.friendlevel < 4)
   {
-    bot.reply(message, convo_content[0].lvl2);
+    // bot.reply(message, convo_content[0].lvl2);
+    console.log(friend_content.username);
+    if(randnum == 0)
+    {
+        bot.replyWithTyping(message, friend_content.username + " " + convo_content[0].lvl2);
+    }
+    else bot.replyWithTyping(message, convo_content[0].lvl2);
   }
   else if (friend_content.friendlevel >= 4 && friend_content.friendlevel < 8)
   {
-    bot.reply(message, convo_content[0].lvl3);
+    if(randnum == 1)
+    {
+        bot.replyWithTyping(message, friend_content.username + " " + convo_content[0].lvl3);
+    }
+    else bot.replyWithTyping(message, convo_content[0].lvl3);
   }
   else if (friend_content.friendlevel >= 8 && friend_content.friendlevel < 12)
   {
-    bot.reply(message, convo_content[0].lvl4);
+    if(randnum == 1)
+    {
+        bot.replyWithTyping(message, friend_content.username + " " + convo_content[0].lvl4);
+    }
+    else bot.replyWithTyping(message, convo_content[0].lvl4);
   }
   else if (friend_content.friendlevel >= 12 && friend_content.friendlevel < 16)
   {
-    bot.reply(message, convo_content[0].lvl5);
+    if(randnum <= 1)
+    {
+        bot.replyWithTyping(message, friend_content.username + " " + convo_content[0].lvl5);
+    }
+    else bot.replyWithTyping(message, convo_content[0].lvl5);
   }
   else if (friend_content.friendlevel >= 16 && friend_content.friendlevel < 20)
   {
-    bot.reply(message, convo_content[0].lvl6);
+    if(randnum <= 2)
+    {
+        bot.replyWithTyping(message, friend_content.username + " " + convo_content[0].lvl6);
+    }
+    else bot.replyWithTyping(message, convo_content[0].lvl6);
   }
 
-  /* increment friend points*/
+  // increment friend points
   friendlist[message.user].friendlevel += convo_content[0].friendpoints;
 
-  /* save friend list */  
+  // save friend list
   friendlist_export = JSON.stringify(friendlist);
   fs.writeFile("./friends.json", friendlist_export, function(err)
   {
@@ -183,48 +280,80 @@ controller.hears(['greet'], 'direct_message,direct_mention,mention,message_recei
 	  console.log('Friends Saved!');
   });
 
-  /*save log*/
+  // save log
   message_export = JSON.stringify(message);
   fs.appendFile("./logofinteractions.json", message_export, function(err)
   {
 	if (err) throw err;
 	  console.log('Interaction Saved!');
   });
-})   
-
+})
 
 /*
-if (process.env.studio_token) {
-    controller.on('message_received,facebook_postback', function(bot, message) {
-        if (message.text) {
-		bot.reply(message, 'I am ALIIIIIIIIIVE ');
-	}
-    });
-}
-*/
+  // HOBBY STUFF FOR ANOTHER DAY
+  var s_hobbyknowledge = [];
+  if (message.entities != null)
+  {
+    console.log(message.entities[0].value);
+    console.log('topic not null');
+    for (i = 0; i < Object.keys(hobbyknowledge).length; ++i)
+    {
+      if (Object.keys(hobbyknowledge)[i] == message.entities[0].value)
+      {
+        s_hobbyknowledge = Object.values(hobbyknowledge)[i];
+        console.log('Found the topic being talked about');
+        console.log(s_hobbyknowledge);
+        bot.reply(message, s_hobbyknowledge.knowledge);
+      }
+    }
+    var randnum = Math.floor(Math.random() * 10);
+    //console.log('Random num is');
+    //console.log(randnum);
+    // it doesnt know about it, and a .5 chance.... FIX PROBABILITY
+    if ((s_hobbyknowledge == []) && (randnum <11))
+    {
+      console.log('no clue about this hobby / topic not null');
+      bot.reply(message, 'tell me about that!');
+      // enter a conversation about the subject
+      
+      bot.createConversation(message, function(err, convo) {
+           // create a path for when a user says YES
+            convo.addMessage({
+                    text: 'That sounds awesome!',
+                    action: 'completed',
+            },'yes_thread');
+            // create a path where neither option was matched
+            // this message has an action field, which directs botkit to go back to the `default` thread after sending this message.
+            convo.addMessage({
+                text: 'Sorry I did not understand.',
+                action: 'default',
+            },'bad_response');
 
-//            controller.studio.runTrigger(bot, message.text, message.user, message.channel, message).then(function(convo) {
-//                if (!convo) {
-//                    // no trigger was matched
-//                    // If you want your bot to respond to every message,
-//                    // define a 'fallback' script in Botkit Studio
-//                    // and uncomment the line below.
-//                    controller.studio.run(bot, 'fallback', message.user, message.channel, message);
-//                } else {
-//                    // set variables here that are needed for EVERY script
-//                    // use controller.studio.before('script') to set variables specific to a script
-//                    convo.setVar('current_time', new Date());
-//                }
-//            }).catch(function(err) {
-//                if (err) {
-//                    bot.reply(message, 'I experienced an error with a request to Botkit Studio: ' + err);
-//                    debug('Botkit Studio: ', err);
-//                }
-//            });
-/*        
-else {
-    console.log('~~~~~~~~~~');
-    console.log('NOTE: Botkit Studio functionality has not been enabled');
-    console.log('To enable, pass in a studio_token parameter with a token from https://studio.botkit.ai/');
-}
+            // Ask about hobby
+            //&& message.entities[0].value
+            convo.addQuestion('Tell me about it', [
+                {
+                    pattern: 'yes',
+                    callback: function(response, convo) {
+                        convo.gotoThread('yes_thread');
+                    },
+                },
+                {
+                    default: true,
+                    callback: function(response, convo) {
+                        convo.gotoThread('bad_response');
+                    },
+                }
+            ],{},'default');
+
+            convo.activate();
+      });
+      
+
+    };
+  };
 */
+  // loop through the brain to find the right thing to say
+
+
+
